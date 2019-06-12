@@ -15,6 +15,8 @@ val `play-server-circe` = LocalProject("play-server-circe")
 val `akka-http-client` = LocalProject("akka-http-client")
 val `akka-http-server` = LocalProject("akka-http-server")
 
+val `http4s-server` = LocalProject("http4s-server")
+
 val `xhr-client` = LocalProject("xhr-client")
 val `xhr-client-circe` = LocalProject("xhr-client-circe")
 val `xhr-client-faithful` = LocalProject("xhr-client-faithful")
@@ -358,3 +360,16 @@ val `example-authentication` =
       )
     )
     .dependsOn(`play-server`, `play-client`, `algebra-playjson-jvm`)
+
+val `example-basic-http4s-server` =
+  project.in(file("examples/basic/http4s-server"))
+    .settings(
+      commonSettings,
+      `scala 2.12 to latest`,
+      publishArtifact := false,
+      libraryDependencies += "org.slf4j" % "slf4j-simple" % "1.7.25",
+      libraryDependencies += "org.http4s" %%% "http4s-blaze-server" % http4sVersion,
+      libraryDependencies += "org.http4s" %% "http4s-dsl" % http4sVersion
+
+    )
+    .dependsOn(`example-basic-shared-jvm`, `http4s-server`)
