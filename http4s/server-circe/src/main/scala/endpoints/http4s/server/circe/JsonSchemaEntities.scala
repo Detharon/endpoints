@@ -10,7 +10,7 @@ import org.http4s.circe._
 
 trait JsonSchemaEntities
     extends Endpoints
-    with algebra.JsonSchemaEntities
+    with algebra.JsonEntitiesFromSchemas
     with endpoints.circe.JsonSchemas {
 
   def jsonRequest[A: JsonSchema](docs: Documentation): RequestEntity[A] = {

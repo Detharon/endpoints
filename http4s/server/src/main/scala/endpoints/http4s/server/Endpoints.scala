@@ -3,14 +3,16 @@ package endpoints.http4s.server
 import cats.effect.Sync
 import cats.implicits._
 import endpoints.algebra.Documentation
-import endpoints.{InvariantFunctor, Semigroupal, Tupler, algebra}
+import endpoints.{InvariantFunctor, PartialInvariantFunctor, Semigroupal, Tupler, Validated, algebra}
 import fs2._
 import org.http4s
-import org.http4s.{Charset, Headers, MediaType}
+import org.http4s.{EntityEncoder, Header, Headers}
 
 import scala.language.higherKinds
 
-trait Endpoints extends algebra.Endpoints with Methods with Urls {
+trait Endpoints extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors
+
+trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with Methods with Urls {
   type Effect[A]
   implicit def Effect: Sync[Effect]
 
@@ -22,6 +24,10 @@ trait Endpoints extends algebra.Endpoints with Methods with Urls {
   type RequestEntity[A] = http4s.Request[Effect] => Effect[A]
 
   type Response[A] = A => http4s.Response[Effect]
+
+  type ResponseEntity[A] = http4s.EntityEncoder[Effect, A]
+
+  type ResponseHeaders[A] = A => http4s.Headers
 
   case class Endpoint[A, B](request: Request[A], response: Response[B]) {
     def implementedBy(implementation: A => B)
@@ -72,46 +78,76 @@ trait Endpoints extends algebra.Endpoints with Methods with Urls {
   /**
     * RESPONSES
     */
-  def emptyResponse(docs: Documentation): Response[Unit] =
-    _ => http4s.Response[Effect](status = http4s.Status.NoContent)
+  implicit lazy val responseInvFunctor: endpoints.InvariantFunctor[Response] =
+    new endpoints.InvariantFunctor[Response] {
+      def xmap[A, B](fa: Response[A], f: A => B, g: B => A): Response[B] = fa compose g
+    }
 
-  def textResponse(docs: Documentation): Response[String] =
-    str =>
-      http4s
-        .Response[Effect](
-          status = http4s.Status.Ok,
-          body = fs2.Stream(str).through(text.utf8Encode),
-          headers = Headers(
-            http4s.headers
-              .`Content-Type`(MediaType.text.plain, Charset.`UTF-8`)
-              .pure[List])
-        )
+  def response[A, B, R](statusCode: StatusCode, entity: ResponseEntity[A],
+                                 docs: Documentation, headers: ResponseHeaders[B])
+                                (implicit tupler: Tupler.Aux[A, B, R]): Response[R] =
+    r => {
+      val (a, b) = tupler.unapply(r)
+      http4s.Response[Effect](status = statusCode, headers = headers(b) ++ entity.headers, body = entity.toEntity(a).body)
+    }
 
-  def wheneverFound[A](response: Response[A],
-                       notFoundDocs: Documentation): Response[Option[A]] = {
-    case Some(a) => response(a)
-    case None    => http4s.Response.notFound[Effect]
+  def choiceResponse[A, B](responseA: Response[A], responseB: Response[B]): Response[Either[A, B]] = {
+    case Left(a) => responseA(a)
+    case Right(b) => responseB(b)
+  }
+
+  def emptyResponse: ResponseEntity[Unit] =
+    EntityEncoder.emptyEncoder[Effect, Unit]
+
+  def textResponse: ResponseEntity[String] =
+    EntityEncoder.stringEncoder
+
+  implicit def responseHeadersSemigroupal: Semigroupal[ResponseHeaders] =
+    new Semigroupal[ResponseHeaders] {
+      def product[A, B](fa: ResponseHeaders[A], fb: ResponseHeaders[B])(implicit tupler: Tupler[A, B]): ResponseHeaders[tupler.Out] =
+        out => {
+          val (a, b) = tupler.unapply(out)
+          fa(a) ++ fb(b)
+        }
+    }
+
+  implicit def responseHeadersInvFunctor: PartialInvariantFunctor[ResponseHeaders] =
+    new PartialInvariantFunctor[ResponseHeaders] {
+      def xmapPartial[A, B](fa: ResponseHeaders[A], f: A => Validated[B], g: B => A): ResponseHeaders[B] =
+        fa compose g
+    }
+
+  def emptyResponseHeaders: ResponseHeaders[Unit] =
+    _ => Headers.empty
+
+  def responseHeader(name: String, docs: Documentation = None): ResponseHeaders[String] =
+    value => Headers.of(Header(name, value))
+
+  def optResponseHeader(name: String, docs: Documentation = None): ResponseHeaders[Option[String]] = {
+    case Some(value) => responseHeader(name, docs)(value)
+    case None => emptyResponseHeaders(())
   }
 
   def endpoint[A, B](request: Request[A],
                      response: Response[B],
-                     summary: Documentation,
-                     description: Documentation,
-                     tags: List[String]): Endpoint[A, B] =
+                     docs: EndpointDocs = EndpointDocs()): Endpoint[A, B] =
     Endpoint(request, response)
+
+
 
   /**
     * REQUESTS
     */
   def emptyRequest: RequestEntity[Unit] = _ => ().pure[Effect]
 
-  def textRequest(docs: Documentation): RequestEntity[String] =
+  def textRequest: RequestEntity[String] =
     req => req.body.through(text.utf8Decode).compile.toList.map(_.mkString)
 
   def request[UrlP, BodyP, HeadersP, UrlAndBodyPTupled, Out](
       method: Method,
       url: Url[UrlP],
       entity: RequestEntity[BodyP] = emptyRequest,
+      docs: Documentation = None,
       headers: RequestHeaders[HeadersP] = emptyHeaders
   )(implicit tuplerUB: Tupler.Aux[UrlP, BodyP, UrlAndBodyPTupled],
     tuplerUBH: Tupler.Aux[UrlAndBodyPTupled, HeadersP, Out]): Request[Out] =

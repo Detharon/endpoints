@@ -4,7 +4,7 @@ import java.net.{URLDecoder, URLEncoder}
 import java.nio.charset.StandardCharsets.UTF_8
 
 import endpoints.algebra.Documentation
-import endpoints.{PartialInvariantFunctor, Tupler, algebra}
+import endpoints.{Invalid, PartialInvariantFunctor, Tupler, Valid, Validated, algebra}
 import org.http4s
 import org.http4s.Uri
 
@@ -20,8 +20,8 @@ trait Urls extends algebra.Urls with StatusCodes {
   type ErrorResponse = http4s.Response[Effect]
   protected val badRequestResponse = http4s.Response[Effect](BadRequest)
 
-  type QueryString[A] = Params => Option[A]
-  type QueryStringParam[A] = (String, Params) => Option[A]
+  type QueryString[A] = Params => Validated[A]
+  type QueryStringParam[A] = (String, Params) => Validated[A]
 
   trait Url[A] {
     def decodeUrl(uri: http4s.Uri): Option[Either[ErrorResponse, A]]
@@ -36,7 +36,7 @@ trait Urls extends algebra.Urls with StatusCodes {
     }
   }
 
-  type Segment[A] = String => Option[A]
+  type Segment[A] = String => Validated[A]
 
   /** Concatenates two `QueryString`s */
   def combineQueryStrings[A, B](first: QueryString[A], second: QueryString[B])(
@@ -55,7 +55,7 @@ trait Urls extends algebra.Urls with StatusCodes {
       implicit param: QueryStringParam[A]): QueryStringParam[Option[A]] =
     (name, params) =>
       params.get(name) match {
-        case None    => Some(None)
+        case None    => Valid(None)
         case Some(_) => param(name, params).map(Some(_))
     }
 
@@ -64,43 +64,47 @@ trait Urls extends algebra.Urls with StatusCodes {
       factory: Factory[A, CC[A]]): QueryStringParam[CC[A]] =
     (name: String, qs: Map[String, Seq[String]]) =>
       qs.get(name) match {
-        case None     => Some(factory.newBuilder.result())
+        case None     => Valid(factory.newBuilder.result())
         case Some(vs) =>
           // ''traverse'' the list of decoded values
-          vs.foldLeft[Option[mutable.Builder[A, CC[A]]]](
-              Some(factory.newBuilder)) {
-              case (None, _)    => None
-              case (Some(b), v) =>
-                // Pretend that this was the query string and delegate to the `A` query string param
-                param(name, Map(name -> (v :: Nil))).map(b += _)
-            }
-            .map(_.result())
-    }
+          vs.foldLeft[Validated[mutable.Builder[A, CC[A]]]](Valid(factory.newBuilder)) {
+            case (inv: Invalid, v) =>
+              // Pretend that this was the query string and delegate to the `A` query string param
+              param(name, Map(name -> (v :: Nil)))
+                .fold(_ => inv, errors => Invalid(inv.errors ++ errors))
+            case (Valid(b), v) =>
+              // Pretend that this was the query string and delegate to the `A` query string param
+              param(name, Map(name -> (v :: Nil))).map(b += _)
+          }.map(_.result())
+      }
 
   implicit def queryStringParamPartialInvFunctor
     : PartialInvariantFunctor[QueryStringParam] =
     new PartialInvariantFunctor[QueryStringParam] {
-      override def xmapPartial[A, B](fa: (String, Params) => Option[A],
-                                     f: A => Option[B],
-                                     g: B => A): (String, Params) => Option[B] =
+      override def xmapPartial[A, B](fa: QueryStringParam[A],
+                                     f: A => Validated[B],
+                                     g: B => A): QueryStringParam[B] =
         (str, params) => fa(str, params).flatMap(f)
     }
 
   implicit def stringQueryString: QueryStringParam[String] =
-    (name, params) => params.get(name).flatMap(_.headOption)
+    (name, params) => {
+      val maybeValue = params.get(name).flatMap(_.headOption)
+      Validated.fromOption(maybeValue)("Missing value")
+  }
 
   implicit def segmentPartialInvFunctor: PartialInvariantFunctor[Segment] =
     new PartialInvariantFunctor[Segment] {
-      override def xmapPartial[A, B](fa: String => Option[A],
-                                     f: A => Option[B],
-                                     g: B => A): String => Option[B] =
+      override def xmapPartial[A, B](fa: Segment[A],
+                                     f: A => Validated[B],
+                                     g: B => A): Segment[B] =
         s => fa(s).flatMap(f)
     }
 
   implicit def pathPartialInvariantFunctor: PartialInvariantFunctor[Path] =
     new PartialInvariantFunctor[Path] {
       override def xmapPartial[A, B](fa: Path[A],
-                                     f: A => Option[B],
+                                     f: A => Validated[B],
                                      g: B => A): Path[B] =
         new Path[B] {
           def decode(paths: List[String])
@@ -108,7 +112,10 @@ trait Urls extends algebra.Urls with StatusCodes {
             fa.decode(paths)
               .map(_.right.flatMap {
                 case (a, rs) =>
-                  f(a).toRight(badRequestResponse).right.map((_, rs))
+                  f(a) match {
+                    case Valid(value) => Right((value, rs))
+                    case Invalid(_) => Left(badRequestResponse)
+                  }
               })
         }
     }
@@ -135,14 +142,14 @@ trait Urls extends algebra.Urls with StatusCodes {
       uncons(segments).map {
         case (s, ss) =>
           A(s) match {
-            case None    => Left(badRequestResponse)
-            case Some(a) => Right((a, ss))
+            case Invalid(_)    => Left(badRequestResponse)
+            case Valid(a) => Right((a, ss))
           }
       }
     }
   }
 
-  implicit def stringSegment: Segment[String] = Some(_)
+  implicit def stringSegment: Segment[String] = Valid(_)
 
   def remainingSegments(name: String = "",
                         docs: Documentation = None): Path[String] =
@@ -172,11 +179,11 @@ trait Urls extends algebra.Urls with StatusCodes {
   implicit def urlPartialInvFunctor: PartialInvariantFunctor[Url] =
     new PartialInvariantFunctor[Url] {
       override def xmapPartial[A, B](fa: Url[A],
-                                     f: A => Option[B],
+                                     f: A => Validated[B],
                                      g: B => A): Url[B] = new Url[B] {
         override def decodeUrl(uri: Uri): Option[Either[ErrorResponse, B]] =
           fa.decodeUrl(uri)
-            .map(_.right.flatMap(a => f(a).toRight(badRequestResponse)))
+            .map(_.right.flatMap(a => f(a).fold(Right(_), _ => Left(badRequestResponse))))
       }
     }
 
@@ -187,8 +194,8 @@ trait Urls extends algebra.Urls with StatusCodes {
         uri: Uri): Option[Either[ErrorResponse, tupler.Out]] = {
       pathExtractor(path, uri).map(_.right.flatMap { a =>
         qs(uri.multiParams) match {
-          case None    => Left(badRequestResponse)
-          case Some(b) => Right(tupler(a, b))
+          case Invalid(_)    => Left(badRequestResponse)
+          case Valid(b) => Right(tupler(a, b))
         }
       })
     }
@@ -213,9 +220,9 @@ trait Urls extends algebra.Urls with StatusCodes {
   implicit def queryStringPartialInvFunctor
     : PartialInvariantFunctor[QueryString] =
     new PartialInvariantFunctor[QueryString] {
-      override def xmapPartial[A, B](fa: Params => Option[A],
-                                     f: A => Option[B],
-                                     g: B => A): Params => Option[B] =
+      override def xmapPartial[A, B](fa: Params => Validated[A],
+                                     f: A => Validated[B],
+                                     g: B => A): Params => Validated[B] =
         params => fa(params).flatMap(f)
     }
 }

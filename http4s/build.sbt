@@ -3,13 +3,14 @@ import EndpointsSettings._
 val `algebra-jvm` = LocalProject("algebraJVM")
 val `algebra-circe-jvm` = LocalProject("algebra-circeJVM")
 val `json-schema-circe-jvm` = LocalProject("json-schema-circeJVM")
+val `openapi-jvm` = LocalProject("openapiJVM")
 
 val `http4s-server` =
   project
     .in(file("server"))
     .settings(
       publishSettings,
-      `scala 2.11 to 2.12`,
+      `scala 2.12 to latest`,
       name := "endpoints-http4s-server",
       libraryDependencies ++= Seq(
         "org.http4s" %%% "http4s-core" % http4sVersion,
@@ -17,13 +18,14 @@ val `http4s-server` =
       )
     )
     .dependsOn(`algebra-jvm` % "test->test;compile->compile")
+    .dependsOn(`openapi-jvm`)
 
 val `http4s-server-circe` =
   project
     .in(file("server-circe"))
     .settings(
       publishSettings,
-      `scala 2.11 to 2.12`,
+      `scala 2.12 to latest`,
       name := "endpoints-http4s-server-circe",
       libraryDependencies += "org.http4s" %% "http4s-circe" % http4sVersion
     )

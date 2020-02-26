@@ -12,10 +12,10 @@ class ServerInterpreterUrlsTest extends EndpointsTestSuite[Endpoints] {
 
     url.decodeUrl(uri) match {
       case None           => DecodedUrl.NotMatched
-      case Some(Left(_))  => DecodedUrl.Malformed
+      case Some(Left(e))  => DecodedUrl.Malformed(e.toString :: Nil)
       case Some(Right(a)) => DecodedUrl.Matched(a)
     }
   }
 
-  urlsTestSuite()
+  def serveEndpoint[Resp](endpoint: serverApi.Endpoint[_, Resp], response: => Resp)(runTests: Int => Unit): Unit = ???
 }

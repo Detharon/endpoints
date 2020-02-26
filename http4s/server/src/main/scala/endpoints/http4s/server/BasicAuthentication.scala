@@ -2,10 +2,9 @@ package endpoints.http4s.server
 
 import cats.data.NonEmptyList
 import endpoints.algebra.BasicAuthentication.Credentials
-import endpoints.algebra.Documentation
 import org.http4s
-import org.http4s.{BasicCredentials, Challenge, Status}
 import org.http4s.headers.{Authorization, `WWW-Authenticate`}
+import org.http4s.{BasicCredentials, Challenge}
 
 trait BasicAuthentication
     extends Endpoints
@@ -30,11 +29,4 @@ trait BasicAuthentication
         }
         .getOrElse(Left(unauthorizedRequestResponse))
 
-  private[endpoints] def authenticated[A](
-      response: Response[A],
-      docs: Documentation): Response[Option[A]] = {
-    case Some(a) => response(a)
-    case None =>
-      http4s.Response[Effect](status = Status.Forbidden)
-  }
 }
