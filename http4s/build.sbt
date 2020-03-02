@@ -14,7 +14,8 @@ val `http4s-server` =
       name := "endpoints-http4s-server",
       libraryDependencies ++= Seq(
         "org.http4s" %%% "http4s-core" % http4sVersion,
-        "org.http4s" %% "http4s-dsl" % http4sVersion
+        "org.http4s" %% "http4s-dsl" % http4sVersion,
+        "org.http4s" %% "http4s-blaze-server" % http4sVersion % Test
       )
     )
     .dependsOn(`algebra-jvm` % "test->test;compile->compile")

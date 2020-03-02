@@ -11,5 +11,5 @@ class EndpointsTestApi
 
   type Effect[A] = IO[A]
 
-  override implicit def Effect: Sync[IO] = Sync[IO]
+  implicit def Effect: Sync[IO] = IO.ioEffect
 }

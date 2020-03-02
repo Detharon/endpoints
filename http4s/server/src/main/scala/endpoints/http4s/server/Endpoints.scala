@@ -8,6 +8,8 @@ import fs2._
 import org.http4s
 import org.http4s.{EntityEncoder, Header, Headers}
 
+import scala.util.control.NonFatal
+
 trait Endpoints extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors
 
 trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with Methods with Urls {
@@ -29,20 +31,30 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
 
   case class Endpoint[A, B](request: Request[A], response: Response[B]) {
     def implementedBy(implementation: A => B)
-      : PartialFunction[http4s.Request[Effect], Effect[http4s.Response[Effect]]] = {
-      case req: http4s.Request[Effect] if request.isDefinedAt(req) =>
-        request(req) match {
-          case Right(a)            => a.map(implementation).map(response)
-          case Left(errorResponse) => errorResponse.pure[Effect]
-        }
-    }
+      : PartialFunction[http4s.Request[Effect], Effect[http4s.Response[Effect]]] =
+      implementedByEffect(implementation(_).pure[Effect])
 
     def implementedByEffect(implementation: A => Effect[B]): PartialFunction[http4s.Request[Effect], Effect[http4s.Response[Effect]]] = {
-      case req: http4s.Request[Effect] if request.isDefinedAt(req) =>
-        request(req) match {
-          case Right(a)            => a.flatMap(implementation).map(response)
-          case Left(errorResponse) => errorResponse.pure[Effect]
+      val handler = { (http4sRequest: http4s.Request[Effect]) =>
+        try {
+          request.lift.apply(http4sRequest).map {
+            case Right(a) =>
+              try {
+                a
+                  .flatMap(implementation).map(response)
+                  .recover {
+                    case NonFatal(t) => handleServerError(t)
+                  }
+              } catch {
+                case NonFatal(t) => handleServerError(t).pure[Effect]
+              }
+            case Left(errorResponse) => errorResponse.pure[Effect]
+          }
+        } catch {
+          case NonFatal(t) => Some(handleServerError(t).pure[Effect])
         }
+      }
+      Function.unlift(handler)
     }
   }
 
