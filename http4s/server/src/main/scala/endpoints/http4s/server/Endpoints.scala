@@ -3,12 +3,10 @@ package endpoints.http4s.server
 import cats.effect.Sync
 import cats.implicits._
 import endpoints.algebra.Documentation
-import endpoints.{InvariantFunctor, PartialInvariantFunctor, Semigroupal, Tupler, Validated, algebra}
+import endpoints.{Invalid, InvariantFunctor, PartialInvariantFunctor, Semigroupal, Tupler, Valid, Validated, algebra}
 import fs2._
 import org.http4s
 import org.http4s.{EntityEncoder, Header, Headers}
-
-import scala.language.higherKinds
 
 trait Endpoints extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors
 
@@ -16,10 +14,10 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
   type Effect[A]
   implicit def Effect: Sync[Effect]
 
-  type RequestHeaders[A] = http4s.Headers => Either[ErrorResponse, A]
+  type RequestHeaders[A] = http4s.Headers => Validated[A]
 
   type Request[A] =
-    PartialFunction[http4s.Request[Effect], Either[ErrorResponse, Effect[A]]]
+    PartialFunction[http4s.Request[Effect], Either[http4s.Response[Effect], Effect[A]]]
 
   type RequestEntity[A] = http4s.Request[Effect] => Effect[A]
 
@@ -54,26 +52,23 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
   /**
     * HEADERS
     */
-  def emptyHeaders: RequestHeaders[Unit] = _ => Right(())
+  def emptyHeaders: RequestHeaders[Unit] = _ => Valid(())
 
   def header(name: String, docs: Documentation): RequestHeaders[String] =
     headers =>
-      headers.filter(_.name.value == name).collectFirst {
-        case h => h.name.value
+      headers.collectFirst {
+        case h if h.name.value == name => h.value
       } match {
-        case Some(value) => Right(value)
-        case None        => Left(badRequestResponse)
+        case Some(value) => Valid(value)
+        case None        => Invalid(s"Missing header $name")
     }
 
   def optHeader(name: String,
                 docs: Documentation): RequestHeaders[Option[String]] =
     headers =>
-      headers.filter(_.name.value == name).collectFirst {
-        case h => Some(h.name.value)
-      } match {
-        case Some(value) => Right(value)
-        case None        => Left(badRequestResponse)
-    }
+      Valid(headers.collectFirst {
+        case h if h.name.value == name => h.value
+      })
 
   /**
     * RESPONSES
@@ -156,11 +151,13 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
         if (req.method == method) {
           url
             .decodeUrl(req.uri)
-            .map(_.flatMap(u =>
-              headers(req.headers).map(h =>
-                entity(req).map(body => tuplerUBH(tuplerUB(u, body), h)))))
-        } else
-        None)
+            .map(validatedU => validatedU.zip(headers(req.headers)))
+            .map {
+              case Valid((u, h)) => Right(entity(req).map(body => tuplerUBH(tuplerUB(u, body), h)))
+              case inv: Invalid  => Left(handleClientErrors(inv))
+            }
+        } else None
+    )
 
   implicit def reqEntityInvFunctor: endpoints.InvariantFunctor[RequestEntity] =
     new InvariantFunctor[RequestEntity] {
@@ -171,24 +168,43 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
         body => f(body).map(map)
     }
 
-  implicit def reqHeadersInvFunctor
-    : endpoints.InvariantFunctor[RequestHeaders] =
+  implicit def reqHeadersInvFunctor: endpoints.InvariantFunctor[RequestHeaders] =
     new InvariantFunctor[RequestHeaders] {
-      override def xmap[From, To](
-          f: Headers => Either[ErrorResponse, From],
-          map: From => To,
-          contramap: To => From): Headers => Either[ErrorResponse, To] =
+      def xmap[From, To](f: RequestHeaders[From], map: From => To, contramap: To => From): RequestHeaders[To] =
         headers => f(headers).map(map)
     }
 
   implicit def reqHeadersSemigroupal: endpoints.Semigroupal[RequestHeaders] =
     new Semigroupal[RequestHeaders] {
-      override def product[A, B](fa: Headers => Either[ErrorResponse, A],
-                                 fb: Headers => Either[ErrorResponse, B])(
-          implicit tupler: Tupler[A, B])
-        : Headers => Either[ErrorResponse, tupler.Out] =
+      def product[A, B](fa: RequestHeaders[A], fb: RequestHeaders[B])(
+          implicit tupler: Tupler[A, B]): RequestHeaders[tupler.Out] =
         headers =>
           fa(headers)
             .flatMap(a => fb(headers).map(b => tupler(a, b)))
     }
+
+
+  /**
+    * This method is called by ''endpoints'' when decoding a request failed.
+    *
+    * The provided implementation calls `clientErrorsResponse` to construct
+    * a response containing the errors.
+    *
+    * This method can be overridden to customize the error reporting logic.
+    */
+  def handleClientErrors(invalid: Invalid): http4s.Response[Effect] =
+    clientErrorsResponse(invalidToClientErrors(invalid))
+
+  /**
+    * This method is called by ''endpoints'' when an exception is thrown during
+    * request processing.
+    *
+    * The provided implementation calls [[serverErrorResponse]] to construct
+    * a response containing the error message.
+    *
+    * This method can be overridden to customize the error reporting logic.
+    */
+  def handleServerError(throwable: Throwable): http4s.Response[Effect] =
+    serverErrorResponse(throwableToServerError(throwable))
+
 }
