@@ -158,18 +158,30 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
       headers: RequestHeaders[HeadersP] = emptyHeaders
   )(implicit tuplerUB: Tupler.Aux[UrlP, BodyP, UrlAndBodyPTupled],
     tuplerUBH: Tupler.Aux[UrlAndBodyPTupled, HeadersP, Out]): Request[Out] =
-    Function.unlift(
-      req =>
-        if (req.method == method) {
-          url
-            .decodeUrl(req.uri)
-            .map(validatedU => validatedU.zip(headers(req.headers)))
-            .map {
-              case Valid((u, h)) => Right(entity(req).map(body => tuplerUBH(tuplerUB(u, body), h)))
-              case inv: Invalid  => Left(handleClientErrors(inv))
-            }
-        } else None
-    )
+    extractUrlAndHeaders(method, url, headers) {
+      case (u, h) =>
+        http4sRequest =>
+          Right(entity(http4sRequest).map(body => tuplerUBH(tuplerUB(u, body), h)))
+    }
+
+  private[server] def extractUrlAndHeaders[U, H, E](
+    method: Method,
+    url: Url[U],
+    headers: RequestHeaders[H]
+  )(
+    validate: ((U, H)) => http4s.Request[Effect] => Either[http4s.Response[Effect], Effect[E]]
+  ): Request[E] =
+    Function.unlift { http4sRequest =>
+      if (http4sRequest.method == method) {
+        url
+          .decodeUrl(http4sRequest.uri)
+          .map(_.zip(headers(http4sRequest.headers)))
+          .map {
+            case Valid(urlAndHeaders) => validate(urlAndHeaders)(http4sRequest)
+            case inv: Invalid => Left(handleClientErrors(inv))
+          }
+      } else None
+    }
 
   implicit def reqEntityInvFunctor: endpoints.InvariantFunctor[RequestEntity] =
     new InvariantFunctor[RequestEntity] {

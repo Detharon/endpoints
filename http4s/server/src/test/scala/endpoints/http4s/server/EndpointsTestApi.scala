@@ -5,9 +5,9 @@ import endpoints.algebra
 
 class EndpointsTestApi
     extends Endpoints
-//    with BasicAuthentication
-//    with algebra.BasicAuthenticationTestApi
-    with algebra.EndpointsTestApi {
+    with BasicAuthentication
+    with algebra.EndpointsTestApi
+    with algebra.BasicAuthenticationTestApi {
 
   type Effect[A] = IO[A]
 
