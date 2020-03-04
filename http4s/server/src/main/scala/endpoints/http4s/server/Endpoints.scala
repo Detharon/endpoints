@@ -10,6 +10,36 @@ import org.http4s.{EntityEncoder, Header, Headers}
 
 import scala.util.control.NonFatal
 
+/**
+  * Interpreter for [[algebra.Endpoints]] based on http4s. It uses [[algebra.BuiltInErrors]]
+  * to model client and server errors.
+  *
+  * Consider the following endpoint definition:
+  *
+  * {{{
+  *   trait MyEndpoints extends algebra.Endpoints with algebra.JsonEntitiesFromSchemas {
+  *     val inc = endpoint(get(path / "inc" /? qs[Int]("x")), ok(jsonResponse[Int]))
+  *   }
+  * }}}
+  *
+  * You can get an http4s service for it as follow:
+  *
+  * {{{
+  *   object MyService
+  *     extends endpoints.http4s.server.Endpoints[IO]
+  *       with endpoints.http4s.server.JsonEntitiesFromSchemas
+  *       with MyEndpoints {
+  *
+  *     val service: org.http4s.HttpRoutes[IO] = HttpRoutes.of(
+  *       routesFromEndpoints(
+  *         inc.implementedBy(x => x + 1)
+  *       )
+  *     )
+  *   }
+  * }}}
+  *
+  * @tparam F Effect type
+  */
 abstract class Endpoints[F[_]](implicit F: Sync[F]) extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors {
 
   final type Effect[A] = F[A]
@@ -17,6 +47,10 @@ abstract class Endpoints[F[_]](implicit F: Sync[F]) extends algebra.Endpoints wi
 
 }
 
+/**
+  * Interpreter for [[algebra.EndpointsWithCustomErrors]] based on http4s.
+  * @group interpreters
+  */
 trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with Methods with Urls {
   type Effect[A]
   implicit def Effect: Sync[Effect]

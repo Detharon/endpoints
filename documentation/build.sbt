@@ -50,6 +50,7 @@ val apiDoc =
         `algebra-jvm`, `algebra-circe-jvm`, `algebra-playjson-jvm`,
         `akka-http-client`, `akka-http-server`,
         `play-client`, `play-server`, `play-server-circe`,
+        `http4s-server`,
         `xhr-client`, `xhr-client-circe`, `xhr-client-faithful`,
         `scalaj-client`,
         `sttp-client`,

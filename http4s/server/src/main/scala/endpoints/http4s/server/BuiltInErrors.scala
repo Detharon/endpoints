@@ -8,6 +8,9 @@ import org.http4s.EntityEncoder
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 
+/**
+  * @group interpreters
+  */
 trait BuiltInErrors extends algebra.BuiltInErrors { this: EndpointsWithCustomErrors =>
 
   def clientErrorsResponseEntity: ResponseEntity[Invalid] = {

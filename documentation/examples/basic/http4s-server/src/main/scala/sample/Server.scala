@@ -5,6 +5,7 @@ import cats.implicits._
 import org.http4s.server.blaze._
 import org.http4s.implicits._
 
+//#app
 object Server extends IOApp {
   override def run(args: List[String]): IO[ExitCode] =
     BlazeServerBuilder[IO]
@@ -14,3 +15,4 @@ object Server extends IOApp {
       .use(_ => IO.never)
       .as(ExitCode.Success)
 }
+//#app

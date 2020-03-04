@@ -11,6 +11,11 @@ import org.http4s.Uri
 import scala.collection.compat._
 import scala.collection.mutable
 
+/**
+  * [[algebra.Urls]] interpreter that decodes and encodes URLs.
+  *
+  * @group interpreters
+  */
 trait Urls extends algebra.Urls with StatusCodes { this: EndpointsWithCustomErrors =>
   type Effect[A]
   val utf8Name = UTF_8.name()

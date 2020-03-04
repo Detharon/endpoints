@@ -8,6 +8,12 @@ import org.http4s
 import org.http4s.headers.`Content-Type`
 import org.http4s.{EntityEncoder, MediaType}
 
+/**
+  * Interpreter for [[algebra.JsonEntitiesFromCodecs]] that decodes JSON requests
+  * and encodes JSON responses.
+  *
+  * @group interpreters
+  */
 trait JsonEntitiesFromCodecs
   extends algebra.JsonEntitiesFromCodecs
     with EndpointsWithCustomErrors {
@@ -33,6 +39,12 @@ trait JsonEntitiesFromCodecs
 
 }
 
+/**
+  * Interpreter for [[algebra.JsonEntitiesFromSchemas]] that decodes JSON requests
+  * and encodes JSON responses.
+  *
+  * @group interpreters
+  */
 trait JsonEntitiesFromSchemas
   extends algebra.JsonEntitiesFromSchemas
     with JsonEntitiesFromCodecs
