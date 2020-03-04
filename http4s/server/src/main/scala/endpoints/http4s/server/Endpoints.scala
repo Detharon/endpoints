@@ -19,9 +19,9 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
   type RequestHeaders[A] = http4s.Headers => Validated[A]
 
   type Request[A] =
-    PartialFunction[http4s.Request[Effect], Either[http4s.Response[Effect], Effect[A]]]
+    PartialFunction[http4s.Request[Effect], Effect[Either[http4s.Response[Effect], A]]]
 
-  type RequestEntity[A] = http4s.Request[Effect] => Effect[A]
+  type RequestEntity[A] = http4s.Request[Effect] => Effect[Either[http4s.Response[Effect], A]]
 
   type Response[A] = A => http4s.Response[Effect]
 
@@ -37,11 +37,11 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
     def implementedByEffect(implementation: A => Effect[B]): PartialFunction[http4s.Request[Effect], Effect[http4s.Response[Effect]]] = {
       val handler = { (http4sRequest: http4s.Request[Effect]) =>
         try {
-          request.lift.apply(http4sRequest).map {
+          request.lift.apply(http4sRequest).map(_.flatMap {
             case Right(a) =>
               try {
-                a
-                  .flatMap(implementation).map(response)
+                implementation(a)
+                  .map(response)
                   .recover {
                     case NonFatal(t) => handleServerError(t)
                   }
@@ -49,7 +49,7 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
                 case NonFatal(t) => handleServerError(t).pure[Effect]
               }
             case Left(errorResponse) => errorResponse.pure[Effect]
-          }
+          })
         } catch {
           case NonFatal(t) => Some(handleServerError(t).pure[Effect])
         }
@@ -145,10 +145,10 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
   /**
     * REQUESTS
     */
-  def emptyRequest: RequestEntity[Unit] = _ => ().pure[Effect]
+  def emptyRequest: RequestEntity[Unit] = _ => Effect.pure(Right(()))
 
   def textRequest: RequestEntity[String] =
-    req => req.body.through(text.utf8Decode).compile.toList.map(_.mkString)
+    req => req.body.through(text.utf8Decode).compile.toList.map(chunks => Right(chunks.mkString))
 
   def request[UrlP, BodyP, HeadersP, UrlAndBodyPTupled, Out](
       method: Method,
@@ -161,7 +161,7 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
     extractUrlAndHeaders(method, url, headers) {
       case (u, h) =>
         http4sRequest =>
-          Right(entity(http4sRequest).map(body => tuplerUBH(tuplerUB(u, body), h)))
+          entity(http4sRequest).map(_.map(body => tuplerUBH(tuplerUB(u, body), h)))
     }
 
   private[server] def extractUrlAndHeaders[U, H, E](
@@ -169,7 +169,7 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
     url: Url[U],
     headers: RequestHeaders[H]
   )(
-    validate: ((U, H)) => http4s.Request[Effect] => Either[http4s.Response[Effect], Effect[E]]
+    entity: ((U, H)) => RequestEntity[E]
   ): Request[E] =
     Function.unlift { http4sRequest =>
       if (http4sRequest.method == method) {
@@ -177,19 +177,19 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
           .decodeUrl(http4sRequest.uri)
           .map(_.zip(headers(http4sRequest.headers)))
           .map {
-            case Valid(urlAndHeaders) => validate(urlAndHeaders)(http4sRequest)
-            case inv: Invalid => Left(handleClientErrors(inv))
+            case Valid(urlAndHeaders) => entity(urlAndHeaders)(http4sRequest)
+            case inv: Invalid         => Effect.pure(Left(handleClientErrors(inv)))
           }
       } else None
     }
 
   implicit def reqEntityInvFunctor: endpoints.InvariantFunctor[RequestEntity] =
     new InvariantFunctor[RequestEntity] {
-      override def xmap[From, To](
-          f: http4s.Request[Effect] => Effect[From],
+      def xmap[From, To](
+          f: RequestEntity[From],
           map: From => To,
-          contramap: To => From): http4s.Request[Effect] => Effect[To] =
-        body => f(body).map(map)
+          contramap: To => From): RequestEntity[To] =
+        body => f(body).map(_.map(map))
     }
 
   implicit def reqHeadersInvFunctor: endpoints.InvariantFunctor[RequestHeaders] =

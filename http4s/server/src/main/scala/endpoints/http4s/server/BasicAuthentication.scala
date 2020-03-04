@@ -45,13 +45,11 @@ trait BasicAuthentication
   ): Request[Out] =
     extractUrlAndHeaders(method, url, headers ++ basicAuthenticationHeader) {
       case (_, (_, None)) =>
-        _ => Left(unauthorizedRequestResponse)
+        _ => Effect.pure(Left(unauthorizedRequestResponse))
       case (u, (h, Some(credentials))) =>
         http4sRequest =>
-          Right(
-            entity(http4sRequest)
-              .map(e => tuplerUEHC(tuplerUE(u, e), tuplerHC(h, credentials)))
-          )
+          entity(http4sRequest)
+            .map(_.map(e => tuplerUEHC(tuplerUE(u, e), tuplerHC(h, credentials))))
     }
 
 }
