@@ -1,17 +1,16 @@
 package sample
 
-import cats.effect.{IO, Sync}
-import endpoints.http4s.server.{BasicAuthentication, JsonEntitiesFromCodecs}
+import cats.effect.IO
+import endpoints.http4s.server.{BasicAuthentication, Endpoints, JsonEntitiesFromCodecs}
 import org.http4s.HttpRoutes
 
 import scala.util.Random
 
 object Api
-    extends JsonEntitiesFromCodecs
+  extends Endpoints[IO]
+    with JsonEntitiesFromCodecs
     with BasicAuthentication
     with ApiAlg {
-  type Effect[A] = IO[A]
-  lazy val Effect: Sync[IO] = Sync[IO]
 
   val router: HttpRoutes[IO] = HttpRoutes.of(
     routesFromEndpoints(

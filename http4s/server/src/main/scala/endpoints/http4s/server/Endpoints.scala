@@ -10,7 +10,12 @@ import org.http4s.{EntityEncoder, Header, Headers}
 
 import scala.util.control.NonFatal
 
-trait Endpoints extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors
+abstract class Endpoints[F[_]](implicit F: Sync[F]) extends algebra.Endpoints with EndpointsWithCustomErrors with BuiltInErrors {
+
+  final type Effect[A] = F[A]
+  final implicit def Effect: Sync[Effect] = F
+
+}
 
 trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with Methods with Urls {
   type Effect[A]

@@ -1,15 +1,10 @@
 package endpoints.http4s.server
 
-import cats.effect.{IO, Sync}
+import cats.effect.IO
 import endpoints.algebra
 
 class EndpointsTestApi
-    extends Endpoints
+    extends Endpoints[IO]
     with BasicAuthentication
     with algebra.EndpointsTestApi
-    with algebra.BasicAuthenticationTestApi {
-
-  type Effect[A] = IO[A]
-
-  implicit def Effect: Sync[IO] = IO.ioEffect
-}
+    with algebra.BasicAuthenticationTestApi

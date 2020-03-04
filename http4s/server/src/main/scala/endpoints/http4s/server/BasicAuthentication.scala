@@ -10,7 +10,7 @@ import org.http4s.headers.{Authorization, `WWW-Authenticate`}
 import org.http4s.{BasicCredentials, Challenge}
 
 trait BasicAuthentication
-    extends Endpoints
+    extends EndpointsWithCustomErrors
     with endpoints.algebra.BasicAuthentication {
 
   private val unauthorizedRequestResponse = http4s
