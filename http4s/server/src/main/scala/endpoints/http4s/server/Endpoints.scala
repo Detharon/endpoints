@@ -103,9 +103,9 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
   /**
     * HEADERS
     */
-  def emptyHeaders: RequestHeaders[Unit] = _ => Valid(())
+  def emptyRequestHeaders: RequestHeaders[Unit] = _ => Valid(())
 
-  def header(name: String, docs: Documentation): RequestHeaders[String] =
+  def requestHeader(name: String, docs: Documentation): RequestHeaders[String] =
     headers =>
       headers.collectFirst {
         case h if h.name.value == name => h.value
@@ -114,7 +114,7 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
         case None        => Invalid(s"Missing header $name")
     }
 
-  def optHeader(name: String,
+  def optRequestHeader(name: String,
                 docs: Documentation): RequestHeaders[Option[String]] =
     headers =>
       Valid(headers.collectFirst {
@@ -194,7 +194,7 @@ trait EndpointsWithCustomErrors extends algebra.EndpointsWithCustomErrors with M
       url: Url[UrlP],
       entity: RequestEntity[BodyP] = emptyRequest,
       docs: Documentation = None,
-      headers: RequestHeaders[HeadersP] = emptyHeaders
+      headers: RequestHeaders[HeadersP] = emptyRequestHeaders
   )(implicit tuplerUB: Tupler.Aux[UrlP, BodyP, UrlAndBodyPTupled],
     tuplerUBH: Tupler.Aux[UrlAndBodyPTupled, HeadersP, Out]): Request[Out] =
     extractUrlAndHeaders(method, url, headers) {
