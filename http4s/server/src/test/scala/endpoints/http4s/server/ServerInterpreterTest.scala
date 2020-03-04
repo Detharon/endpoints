@@ -4,7 +4,7 @@ import java.net.ServerSocket
 
 import cats.effect.{ContextShift, IO, Timer}
 import endpoints.{Invalid, Valid}
-import endpoints.algebra.server.{BasicAuthenticationTestSuite, DecodedUrl, EndpointsTestSuite}
+import endpoints.algebra.server.{BasicAuthenticationTestSuite, DecodedUrl, EndpointsTestSuite, JsonEntitiesFromSchemasTestSuite}
 import org.http4s.server.Router
 import org.http4s.{HttpRoutes, Uri}
 import org.http4s.server.blaze.BlazeServerBuilder
@@ -14,7 +14,8 @@ import scala.concurrent.ExecutionContext
 
 class ServerInterpreterTest
   extends EndpointsTestSuite[EndpointsTestApi]
-    with BasicAuthenticationTestSuite[EndpointsTestApi] {
+    with BasicAuthenticationTestSuite[EndpointsTestApi]
+    with JsonEntitiesFromSchemasTestSuite[EndpointsTestApi] {
 
   val serverApi = new EndpointsTestApi()
 
